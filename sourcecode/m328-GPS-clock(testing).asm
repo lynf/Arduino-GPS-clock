@@ -13,6 +13,12 @@
 ;
 ;######################################################################################
 ;
+; Change Log:
+; ===========
+; 1. Revise <initz:> to enable pull-ups on all unused ports as precaution
+;	to reduce unnecessary device current consupmtion.
+; 
+;
 ; 
 ; All Versions of m328_GPS_clock.asm run at 9600 baud.
 ;
@@ -496,6 +502,18 @@ initz:
 		clr		flagb
 ;
 ;
+; Activate pull-up resistors on all input pins, used and unused
+;
+		ldi		rmp,0b00011101
+		out		PORTB,rmp
+;
+		ldi		rmp,0b00111111
+		out		PORTC,rmp
+;
+		ldi		rmp,0b11101100
+		out		PORTD,rmp
+;
+;
 ; Initialize PD3,2 as inputs for INT0 and INT1 inputs
 ;
 		sbi		PORTD,PD2			; Enable PD2 pull-up
@@ -503,7 +521,7 @@ initz:
 ;
 ; Enable TZ entry menu
 ;
-		sbi		PORTC,PC0			; Enable PC0 (A0 input) pull-up
+	;	sbi		PORTC,PC0			; Enable PC0 (A0 input) pull-up
 ;
 ; PD4 test LED driver output 
 ;
