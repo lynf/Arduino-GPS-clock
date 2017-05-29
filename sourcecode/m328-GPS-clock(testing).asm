@@ -18,7 +18,12 @@
 ; 1. Revise <initz:> to enable pull-ups on all unused ports as precaution
 ;	to reduce unnecessary device current consupmtion.
 ; 
+; 2. Set default TZoff = -4 h (was -5). Revise A0 (pin PC0) input to switch to DST when
+;	 pin grounded, by increasing TZ by -1 h. Modify <gettz:>.
 ;
+; 3. Change <gmt_lt_hr:> to use DST correction if A0 grounded. Modify <main:> to
+;	 remove call to <gettz:> which is no longer used.
+; 
 ; 
 ; All Versions of m328_GPS_clock.asm run at 9600 baud.
 ;
@@ -29,13 +34,7 @@
 ;		Fosc have to be changed accordingly. This is done by setting the equate
 ;		Vcc_low = true for 3.3 V, else Vcc_low = false for 5 V devices.
 ;
-; The default time zone is -5 h, corresponding to Ontario, Canada. The default
-; time zone setting can be changed by invoking the <gettz> routine by:
-;
-;	1. Add a jumper to connect TZ_en pin to ground
-;	2. Disconnect the GPS module's TX pin  from the ATmega328P's RX pin
-;	3. Reset the ATmega328P. 
-;
+; The default time zone is -4 h, corresponding to Ontario, Canada.
 ; The default TZoff is stored to TZb by <ld_eeprm1> during controller startup
 ;
 ;
@@ -53,7 +52,7 @@
 ; PC5 = SCL
 ; PC4 = SDA
 ;
-; PC0 = TZ_en, enable TZ entry by grounding this pin
+; PC0 = DST_en, enable DST correction by grounding this pin
 
 .list		; Listing on
 
@@ -75,8 +74,9 @@
 .equ	time_sz = 9			; Time string length
 .equ	date_sz = 6			; Date string length
 .equ	fieldskip = 8		; Fields to skip
-.equ	TZoff = 5			; TZ offset, default value for Ontario, Canada
-.equ	TZ_en = PC0			; Enable TZ entry
+.equ	TZoff = 4			; TZ offset, default value for Ontario, Canada
+;.equ	TZoff = 8			; TZ offset, default value for Beijing, China
+.equ	DST_en = PC0		; Enable DST correction
 ;
 ; Processor operating voltage
 ;
@@ -124,9 +124,9 @@
 .if		baud_low
 .equ	BAUD = 9600			; Baud rate
 .if		Vcc_low
-.equ	BAUD_PRE = 51		; Baud rate prescaler - 8.00 MHz clock
+.equ	BAUD_PRE = 51		; Baud rate prescaler - 8.00 MHz clock, 9600
 .else
-.equ	BAUD_PRE = 103		; Baud rate prescaler - 16.00 MHz clock
+.equ	BAUD_PRE = 103		; Baud rate prescaler - 16.00 MHz clock, 9600
 .endif
 ;
 .else
@@ -695,16 +695,22 @@ main:
 ;
 ; Get EEPROM stored TZoff and flagb image
 ;
-		rcall	ld_eeprm			; Get TZoff from EEPROM
-		lds		flagb,flagb_img		; Restore flagb image
+;		rcall	ld_eeprm			; Get TZoff from EEPROM
+;		lds		flagb,flagb_img		; Restore flagb image
 ;
-; Check if TZ_en input pin grounded to enable TZ offset data entry. This
-; routine is run only if GPS module TX line is disconnected from RX in pin
-; since the UART RX input is connected to both the USB RX line as well as
-; the GPS Tx line.
+; This version of GPS-clock uses hard coded TZ offset and explicit
+; setting TXposf = 1 in flagb register for positive offset,
+; else TXposf = 0 in flagb register for negative offset by default. No call to
+; <gettz:> used.
 ;
-		sbis	PINC,TZ_en		; Test if TZ_en pin jumpered to ground
-		rjmp	gettz			;	Yes, get TZ offset
+	;;	sbr		flagb,(1<<TZposf)	; Set + offset flag if positive
+		ldi		rmp,TZoff			; Use default TZ offset
+		sts		TZb,rmp				; Load buffer <-- rmp
+;
+; Check if DST_en input pin grounded to enable DST correction.
+;
+	;	sbis	PINC,DST_en		; Test if DST_en pin jumpered to ground
+	;	rjmp	gettz			;	Yes, get TZ offset
 ;
 ;  Dump GPS time and date data to screen and LCD module.
 ;
@@ -899,6 +905,11 @@ gmt_lt_hr:
 		mov		rga,XH				; Packed BCD hours in rga
 		lds		rgb,TZb				; Get TZ offset
 ;
+; Check if DST_en pin grounded to apply DST correction
+;
+		sbis	PINC,DST_en		; Test if DST_en pin jumpered to ground
+		inc		rgb				;	Yes, apply DST correctiont
+;
 		sbrs	flagb,TZposf		; Check if + or - TZ correction
 		rjmp	dec_hr
 ;
@@ -1067,10 +1078,10 @@ RMC_hdr:
 ; RX UART input is wired to GPS module TX output in normal clock operation.
 ; For setting TZ offset data, disconnect the GPS TX output from the UART
 ; channel RX input to force controller to look only at the terminal's keyboard
-; output. TZ_en pin must be grounded to run the <gettz> code.
+; output. DST_en pin must be grounded to run the <gettz> code.
 ;
 ; When TZ data is entered and successfully stored in EEPROM, restore
-; GPS connection to RX input, remove the TZ_en jumper, and reset the
+; GPS connection to RX input, remove the DST_en jumper, and reset the
 ; controller.
 ;
 ; (Based on <ldt> routine in Tile)
